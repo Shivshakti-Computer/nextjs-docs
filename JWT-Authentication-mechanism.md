@@ -1,298 +1,343 @@
 ---
 
-# 🔐 Next.js Authentication – Complete Deep Documentation
+# 🔐 Next.js Authentication System (JWT + Hybrid Architecture)
+
+> Production-ready authentication system built using Next.js App Router with JWT, HTTP-only cookies, Access & Refresh Tokens, Middleware protection, and Hybrid security architecture.
 
 ---
 
-# 📌 1. Introduction
+# 📌 Table of Contents
 
-Ye documentation Next.js App Router me authentication architecture ko deeply explain karta hai.
-
-Isme cover kiya gaya hai:
-
-* Login workflow
-* JWT authentication
-* Stateless vs Stateful authentication
-* Access & Refresh tokens
-* Middleware verification
-* Hybrid authentication model
-* Security trade-offs
-
----
-
-# 🧠 2. Complete Login Workflow (Step-by-Step)
-
-## ✅ Step 1: User Login
-
-User:
-
-* Email enter karta hai
-* Password enter karta hai
-* Form submit karta hai
-
-Request:
-
-```
-POST /api/auth/login
-```
+* Introduction
+* Authentication Architecture Overview
+* Login Workflow (Step-by-Step)
+* JWT Deep Explanation
+* Token Storage Strategy
+* Middleware Protection
+* Access & Refresh Token Flow
+* Stateless vs Stateful Authentication
+* Hybrid Security Model
+* Security Best Practices
+* Future Enhancements
 
 ---
 
-## ✅ Step 2: Server Verification
+# 🚀 Introduction
 
-Server:
+This project demonstrates a secure authentication system in **Next.js App Router** using:
 
-1. Email ke through database me user find karta hai
-2. bcrypt.compare() se password verify karta hai
+* JWT (JSON Web Token)
+* HTTP-only cookies
+* Access Token (short-lived)
+* Refresh Token (long-lived)
+* Middleware route protection
+* Hybrid database validation approach
 
-If password wrong → 401 Unauthorized
-If correct → Next step
+This implementation is suitable for:
 
----
-
-## ✅ Step 3: JWT Generation
-
-Server JWT generate karta hai:
-
-```js
-jwt.sign(
-  {
-    userId: user._id,
-    role: user.role
-  },
-  SECRET_KEY,
-  { expiresIn: "15m" }
-)
-```
-
-### Important:
-
-* JWT secret token ke andar store nahi hota
-* JWT encrypted nahi hota
-* JWT signed hota hai
+* SaaS applications
+* Enterprise systems
+* Banking-level security models
+* Scalable architectures
 
 ---
 
-# 🔐 3. JWT Structure
-
-JWT =
+# 🏗 Authentication Architecture Overview
 
 ```
-Header.Payload.Signature
+User Login
+    ↓
+Server Validates Credentials
+    ↓
+Access Token (15m)
+Refresh Token (7d)
+    ↓
+HTTP-only Cookie Storage
+    ↓
+Middleware Verification
+    ↓
+Protected Route Access
 ```
 
-Example payload:
+---
 
-```json
-{
-  "userId": "123",
-  "role": "admin",
-  "exp": 1712345678
+# 🔐 Login Workflow (Step-by-Step)
+
+## 1️⃣ User Submits Login Form
+
+```ts
+// app/login/page.tsx
+
+await fetch("/api/auth/login", {
+  method: "POST",
+  body: JSON.stringify({ email, password }),
+  headers: { "Content-Type": "application/json" }
+});
+```
+
+---
+
+## 2️⃣ Server Verifies Credentials
+
+```ts
+// app/api/auth/login/route.ts
+
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+
+const user = await db.user.findUnique({ where: { email } });
+
+if (!user) {
+  return Response.json({ message: "User not found" }, { status: 401 });
+}
+
+const isMatch = await bcrypt.compare(password, user.password);
+
+if (!isMatch) {
+  return Response.json({ message: "Invalid credentials" }, { status: 401 });
 }
 ```
 
-Server verify karta hai:
+---
 
+## 3️⃣ JWT Generation
+
+```ts
+const accessToken = jwt.sign(
+  {
+    userId: user.id,
+    role: user.role
+  },
+  process.env.JWT_SECRET!,
+  { expiresIn: "15m" }
+);
 ```
-jwt.verify(token, SECRET_KEY)
-```
+
+### Important Notes
+
+* JWT is **signed**, not encrypted
+* Secret key is NOT stored inside the token
+* Server does NOT store token copy (stateless)
 
 ---
 
-# 🍪 4. Token Storage Options
+# 🍪 Token Storage Strategy
 
-## ❌ Option 1: LocalStorage (Not Recommended)
+## ❌ LocalStorage (Not Recommended)
 
-Problem:
-
-* XSS attack me token steal ho sakta hai
+* Vulnerable to XSS attacks
+* Token can be stolen via JavaScript
 
 ---
 
-## ✅ Option 2: HTTP Only Cookie (Recommended)
+## ✅ HTTP-Only Cookie (Recommended)
 
-Server:
+```ts
+import { cookies } from "next/headers";
 
-```
-Set-Cookie:
-token=abc123;
-HttpOnly;
-Secure;
-SameSite=Strict;
+cookies().set("accessToken", accessToken, {
+  httpOnly: true,
+  secure: true,
+  sameSite: "strict",
+  path: "/",
+  maxAge: 60 * 15
+});
 ```
 
 Advantages:
 
-* JavaScript access nahi kar sakta
-* Automatically har request me attach hota hai
+* JavaScript cannot access it
+* Automatically sent with every request
 * Production secure
 
 ---
 
-# 🔁 5. Middleware Authentication Flow
+# 🛡 Middleware Protection
 
-Middleware:
+```ts
+// middleware.ts
 
-1. Cookie read karta hai
-2. JWT verify karta hai
-3. Expiry check karta hai
+import { NextResponse } from "next/server";
+import jwt from "jsonwebtoken";
 
-If valid → Next page
-If invalid → Redirect to login
+export function middleware(request) {
+  const token = request.cookies.get("accessToken")?.value;
 
----
+  if (!token) {
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
 
-# 🧠 6. Stateless Authentication
+  try {
+    jwt.verify(token, process.env.JWT_SECRET!);
+    return NextResponse.next();
+  } catch {
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
+}
 
-JWT based system me:
-
-* Server token ka copy store nahi karta
-* Har request me signature verify hota hai
-* Database call zaruri nahi hoti
-
-Advantages:
-
-* Scalable
-* Microservices friendly
-* No session storage
-
-Limitation:
-
-* Role change instantly reflect nahi hota
-* User ban instantly reflect nahi hota
-
----
-
-# 🗄️ 7. Stateful Authentication (Session-Based)
-
-Traditional system:
-
-```
-Login
-↓
-Session Create
-↓
-Session ID Cookie
-↓
-Session Store (Redis / DB)
+export const config = {
+  matcher: ["/dashboard/:path*"]
+};
 ```
 
-Advantages:
+Middleware verifies:
 
-* Immediate revoke
-* Role change instant reflect
-
-Disadvantages:
-
-* Server storage required
-* Scaling complexity
+* Token existence
+* Signature
+* Expiry
 
 ---
 
-# 🔄 8. Access Token vs Refresh Token
+# 🔄 Access & Refresh Token Architecture
 
-## 🟢 Access Token
+## 🔹 Access Token
 
-* Short expiry (15 min)
-* Har request me use hota hai
-* Limited damage if leaked
+* Short-lived (15 minutes)
+* Used for route access
+* Verified by middleware
 
----
+## 🔹 Refresh Token
 
-## 🔴 Refresh Token
-
-* Long expiry (7–30 days)
-* New access token generate karta hai
-* Database me store karna recommended
-* More dangerous if leaked
+* Long-lived (7 days)
+* Stored in HTTP-only cookie
+* Stored in database for revocation
 
 ---
 
-# ⚠️ 9. Token Expiry Scenario
+## Refresh Flow Example
 
-If access token expired:
+```ts
+// app/api/auth/refresh/route.ts
 
-* Middleware reject karega
-* Client refresh endpoint hit karega
-* Server refresh token verify karega
-* New access token issue karega
+const refreshToken = cookies().get("refreshToken")?.value;
 
-If refresh token expired:
+if (!refreshToken) {
+  return Response.json({ message: "Unauthorized" }, { status: 401 });
+}
 
-* User logout
-* Redirect to login
+const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET!);
+
+// Optional DB validation
+const storedToken = await db.refreshToken.findUnique({
+  where: { token: refreshToken }
+});
+
+if (!storedToken) {
+  return Response.json({ message: "Invalid token" }, { status: 403 });
+}
+
+const newAccessToken = jwt.sign(
+  { userId: decoded.userId },
+  process.env.JWT_SECRET!,
+  { expiresIn: "15m" }
+);
+```
 
 ---
 
-# 🏦 10. Hybrid Authentication Model (Banking-Level)
+# 🧠 Stateless vs Stateful Authentication
 
-Hybrid approach combine karta hai:
+| Feature                | JWT (Stateless) | Session (Stateful) |
+| ---------------------- | --------------- | ------------------ |
+| Server Storage         | ❌               | ✅                  |
+| Scalability            | ✅               | ⚠️                 |
+| Immediate Revoke       | ❌               | ✅                  |
+| Role Change Reflection | ❌               | ✅                  |
 
-* JWT verification
-* Database validation
-* Refresh token tracking
+---
+
+# 🏦 Hybrid Authentication Model (Recommended)
+
+Hybrid = JWT + Database Validation
 
 Flow:
 
 ```
-Login
-↓
-Access Token (15 min)
-Refresh Token (7 days)
-↓
-Middleware Verify
-↓
-DB Check (isActive, role)
-↓
-Refresh Endpoint
+JWT Verify
++
+Database Check (isActive, role)
++
+Refresh Token Tracking
 ```
 
-Advantages:
+Why Hybrid?
 
-* Instant revoke possible
-* Role change reflect
-* Secure long sessions
+* Immediate account disable
+* Role update reflection
+* Device management
+* Logout from all devices
+
+Best for:
+
+* Banking apps
+* Enterprise systems
+* High-security platforms
 
 ---
 
-# 🔥 11. JWT Security Limitations
+# 🔐 Security Best Practices
+
+✔ Use short-lived access tokens
+✔ Store tokens in HTTP-only cookies
+✔ Use Secure + SameSite flags
+✔ Hash passwords using bcrypt
+✔ Store refresh tokens in database
+✔ Implement token rotation
+✔ Use rate limiting on login
+✔ Protect against CSRF
+
+---
+
+# ⚠ JWT Limitations
 
 If:
 
-* User banned
-* Role changed
+* User is banned
+* Role changes
 * Account disabled
 
-Aur JWT 24 hours valid hai:
+And access token is still valid:
 
-User continue kar sakta hai jabtak:
+User may continue until expiry unless:
 
-* Token expire na ho
-* Blacklist na kiya jaye
-* DB check na ho
-
----
-
-# 🏗️ 12. Architecture Comparison
-
-| Feature                | JWT | Session | Hybrid  |
-| ---------------------- | --- | ------- | ------- |
-| Server storage         | ❌   | ✅       | Partial |
-| Scalable               | ✅   | ⚠️      | ✅       |
-| Immediate revoke       | ❌   | ✅       | ✅       |
-| Role update instant    | ❌   | ✅       | ✅       |
-| Banking-level security | ⚠️  | ⚠️      | ✅       |
+* DB validation is added
+* Token is blacklisted
+* Refresh token is revoked
 
 ---
 
-# 🎯 13. Final Understanding
+# 📦 Recommended Folder Structure
 
-✔ JWT stateless hota hai
-✔ Server copy store nahi karta
-✔ Secret token me store nahi hota
-✔ HTTP Only cookie recommended hai
-✔ Middleware verification karta hai
-✔ Pure stateless me state-change issue hota hai
-✔ Hybrid approach most secure hai
+```
+src/
+ ├── app/
+ │    ├── api/
+ │    │    └── auth/
+ │    │         ├── login/
+ │    │         ├── refresh/
+ │    │         └── logout/
+ │    ├── dashboard/
+ │    └── login/
+ ├── lib/
+ │    ├── jwt.ts
+ │    └── db.ts
+ ├── middleware.ts
+```
+
+---
+
+# 🎯 Conclusion
+
+This authentication system provides:
+
+* Stateless JWT verification
+* Secure cookie storage
+* Scalable architecture
+* Hybrid security control
+* Production-ready design
+
+It balances:
+
+Security ⚖ Performance ⚖ Scalability
 
 ---
