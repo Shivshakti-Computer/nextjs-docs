@@ -1,5 +1,3 @@
----
-
 # 🔐 Next.js Authentication System (JWT + Hybrid Architecture)
 
 > Production-ready authentication system built using Next.js App Router with JWT, HTTP-only cookies, Access & Refresh Tokens, Middleware protection, and Hybrid security architecture.
